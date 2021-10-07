@@ -1,6 +1,6 @@
 local BindCounter = 0
 -- Used for keeping bindings that are the same
--- priority in the order they were connected
+-- priority in the order they were binded
 
 local function compareBindingOrder(binding1, binding2)
 	local binding1_priority = binding1.priority
@@ -53,12 +53,11 @@ function Binder:Bind(
 
 	if self._active == false then
 		return setmetatable({
-			Connected = false
+			Binded = false
 		}, ScriptBinding)
 	end
 
 	local _bindings = self._bindings
-
 	BindCounter += 1
 
 	local node = {
@@ -67,20 +66,20 @@ function Binder:Bind(
 
 		subPriority = BindCounter,
 		binder = self,
-		connection = nil
+		binding = nil
 	}
 
 	table.insert(_bindings, node)
 	table.sort(_bindings, compareBindingOrder)
 
-	local connection = setmetatable({
-		Connected = true,
+	local binding = setmetatable({
+		Binded = true,
 		_node = node
 	}, ScriptBinding)
 
-	node.connection = connection
+	node.binding = binding
 
-	return connection
+	return binding
 end
 
 function Binder:Wait(priority: number): (...any)
@@ -92,14 +91,14 @@ function Binder:Wait(priority: number): (...any)
 	local thread do
 		thread = coroutine.running()
 
-		local connection
-		connection = self:Bind(priority, function(...)
-			if connection == nil then
+		local binding
+		binding = self:Bind(priority, function(...)
+			if binding == nil then
 				return
 			end
 
-			connection:Disconnect()
-			connection = nil
+			binding:Unbind()
+			binding = nil
 
 			task.spawn(thread, ...)
 		end)
@@ -113,8 +112,8 @@ function Binder:Fire(...)
 		return
 	end
 
-	for _, binding in ipairs(self._bindings) do
-		task.defer(binding.callback, ...)
+	for _, node in ipairs(self._bindings) do
+		task.defer(node.callback, ...)
 	end
 end
 
@@ -125,22 +124,22 @@ function Binder:Destroy()
 
 	self._active = false
 
-	for _, binding in ipairs(self._bindings) do
-		local connection = binding.connection
+	for _, node in ipairs(self._bindings) do
+		local binding = node.binding
 
-		connection.Connected = false
-		connection._node = nil
+		binding.Binded = false
+		binding._node = nil
 	end
 
 	self._bindings = nil
 end
 
 function ScriptBinding:Unbind()
-	if self._binded == false then
+	if self.Binded == false then
 		return
 	end
 
-	self._binded = false
+	self.Binded = false
 
 	local _node = self._node
 	local _binder = _node.binder
@@ -155,10 +154,10 @@ function ScriptBinding:Unbind()
 end
 
 function ScriptBinding:GetPriority(): number
-	if self.Connected then
+	if self.Binded then
 		return self._node.priority
 	else
-		error("Cannot get priority from disconnected binding", 2)
+		error("Cannot get priority from unbinded binding", 2)
 	end
 end
 
@@ -167,7 +166,7 @@ export type Class = typeof(
 )
 
 export type ScriptBinding = typeof(
-	setmetatable({}, ScriptBinding)
+	setmetatable({ Binded = true }, ScriptBinding)
 )
 
 return Binder
